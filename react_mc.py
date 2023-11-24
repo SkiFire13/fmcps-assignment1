@@ -12,6 +12,7 @@ pynusmv.init.init_nusmv()
 LTL_TYPE = pynusmv.prop.propTypes['LTL']
 
 CONTEXT_TYPE = 130
+AND_TYPE = 169
 IMPLIES_TYPE = 164
 G_TYPE = 186
 F_TYPE = 187
@@ -20,26 +21,37 @@ def spec_to_bdd(model, spec):
     bddspec = pynusmv.mc.eval_ctl_spec(model, spec)
     return bddspec
 
-# TODO: Handle &s
-def parse_react(spec: Spec) -> Optional[tuple[Spec, Spec]]:
+def parse_react(spec: Spec) -> Optional[list[Spec, Spec]]:
     if spec.type == CONTEXT_TYPE:
-        return parse_react(spec.cdr)
+        spec = spec.cdr
     
-    if spec.type != IMPLIES_TYPE:
-        return None
-    
-    def parse_gf(spec: Spec):
-        if spec.type != G_TYPE or spec.car.type != F_TYPE:
+    stack = [spec]
+    parsed = []
+    while len(stack) != 0:
+        spec = stack.pop()
+
+        if spec.type == AND_TYPE:
+            stack.append(spec.car)
+            stack.append(spec.cdr)
+            continue
+
+        if spec.type != IMPLIES_TYPE:
             return None
-        return spec.car.car
-
-    lhs = parse_gf(spec.car)
-    rhs = parse_gf(spec.cdr)
-
-    if lhs is None or rhs is None:
-        return None
     
-    return lhs, rhs
+        def parse_repeatedly(spec: Spec):
+            if spec.type != G_TYPE or spec.car.type != F_TYPE:
+                return None
+            return spec.car.car
+
+        lhs = parse_repeatedly(spec.car)
+        rhs = parse_repeatedly(spec.cdr)
+
+        if lhs is None or rhs is None:
+            return None
+        
+        parsed.append((lhs, rhs))
+
+    return parsed
 
 def reachable_bdd(model: BddFsm) -> BDD:
     reach = model.init
@@ -117,12 +129,11 @@ def check_explain_react_spec(model: BddFsm, spec: Spec) -> Optional[tuple[Litera
     parsed = parse_react(prop.expr)
     if parsed is None:
         return None
-    lhs, rhs = parsed
-    
-    res, trace = repeatedly_explain(model, lhs)
-    if not res or repeatedly(model, rhs):
-        return True, None
-    return False, trace
+    for lhs, rhs in parsed:
+        res, trace = repeatedly_explain(model, lhs)
+        if res and not repeatedly(model, rhs):
+            return False, trace
+    return True, None
 
 if len(sys.argv) != 2:
     print("Usage:", sys.argv[0], "filename.smv")
