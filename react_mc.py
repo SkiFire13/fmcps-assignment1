@@ -105,19 +105,22 @@ def path_to_trace(model: BddFsm, path: list[BDD]) -> list[dict[str, str]]:
         trace.append(s2.get_str_values())
     return trace
 
-def build_trace(model: BddFsm, recur: BDD) -> list[dict[str, str]]:
+def find_looping_state(model: BddFsm, recur: BDD) -> BDD:
     while True:
         postreach = BDD.false()
         new = model.post(recur)
         while new.isnot_false():
             postreach = postreach + new
             if recur.entailed(postreach):
-                s = model.pick_one_state(recur)
-                reach_trace = find_path(model, model.init, s)
-                loop_trace = find_path(model, model.post(s), s)
-                return path_to_trace(model, reach_trace + loop_trace)
+                return model.pick_one_state(recur)
             new = model.post(postreach) - postreach
         recur = recur & postreach
+
+def build_trace(model: BddFsm, recur: BDD) -> list[dict[str, str]]:
+    s = find_looping_state(model, recur)
+    reach_trace = find_path(model, model.init, s)
+    loop_trace = find_path(model, model.post(s), s)
+    return path_to_trace(model, reach_trace + loop_trace)
 
 def repeatedly_explain(model: BddFsm, spec: Spec) -> tuple[Literal[True], list[BDD]] | tuple[Literal[False], None]:
     bddspec = spec_to_bdd(model, spec)
