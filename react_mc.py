@@ -63,7 +63,7 @@ def repeatedly(model: BddFsm, spec: Spec) -> bool:
         recur = recur & prereach
     return False
 
-def trace_until(model: BddFsm, start: BDD, goal: BDD) -> list[BDD]:
+def state_trace_until(model: BddFsm, start: BDD, goal: BDD) -> list[BDD]:
     reach = start
     new = start
     frontiers = []
@@ -71,13 +71,13 @@ def trace_until(model: BddFsm, start: BDD, goal: BDD) -> list[BDD]:
         conj = new & goal
         if conj.isnot_false():
             last = model.pick_one_state(conj)
-            return build_trace(model, frontiers, last)
+            return build_state_trace(model, frontiers, last)
         frontiers.append(new)
         new = model.post(new) - reach
         reach = reach | new
     raise "Trace goal should be reachable"
 
-def build_trace(model: BddFsm, frontiers: list[BDD], last: BDD) -> list[BDD]:
+def build_state_trace(model: BddFsm, frontiers: list[BDD], last: BDD) -> list[BDD]:
     trace = [last]
     for front in reversed(frontiers):
         pred = model.pre(last)
@@ -85,6 +85,15 @@ def build_trace(model: BddFsm, frontiers: list[BDD], last: BDD) -> list[BDD]:
         trace.append(state)
         last = state
     trace.reverse()
+    return trace
+
+def expand_state_trace(model: BddFsm, state_trace: list[BDD]) -> list[dict[str, str]]:
+    trace = [state_trace[0].get_str_values()]
+    for s1, s2 in zip(state_trace, state_trace[1:]):
+        inputs = model.get_inputs_between_states(s1, s2)
+        input = model.pick_one_inputs(inputs)
+        trace.append(input.get_str_values())
+        trace.append(s2.get_str_values())
     return trace
 
 def repeatedly_explain(model: BddFsm, spec: Spec) -> tuple[Literal[True], list[BDD]] | tuple[Literal[False], None]:
@@ -97,20 +106,23 @@ def repeatedly_explain(model: BddFsm, spec: Spec) -> tuple[Literal[True], list[B
             prereach = prereach + new
             if recur.entailed(prereach):
                 s = model.pick_one_state(recur)
-                reach_trace = trace_until(model, model.init, s)
-                reach_loop = trace_until(model, model.post(s), s)
-                return True, reach_trace + reach_loop
+                reach_trace = state_trace_until(model, model.init, s)
+                loop_trace = state_trace_until(model, model.post(s), s)
+                return True, expand_state_trace(model, reach_trace + loop_trace)
             new = model.pre(new) - prereach
         recur = recur & prereach
     return False, None
 
-def print_trace(model: BddFsm, trace: list[BDD]):
-    for s1, s2 in zip(trace, trace[1:]):
-        print(s1.get_str_values())
-        inputs = model.get_inputs_between_states(s1, s2)
-        input = model.pick_one_inputs(inputs)
-        print(input.get_str_values())
-    print(trace[-1].get_str_values())
+def check_explain_react_spec(model: BddFsm, spec: Spec) -> Optional[tuple[Literal[True], None] | tuple[Literal[False], list[BDD]]]:
+    parsed = parse_react(prop.expr)
+    if parsed is None:
+        return None
+    lhs, rhs = parsed
+    
+    res, trace = repeatedly_explain(model, lhs)
+    if not res or repeatedly(model, rhs):
+        return True, None
+    return False, trace
 
 if len(sys.argv) != 2:
     print("Usage:", sys.argv[0], "filename.smv")
@@ -125,18 +137,18 @@ for prop in pynusmv.glob.prop_database():
         print("Property", prop.expr, "is not an LTL formula, skipped.")
         continue
 
-    parsed = parse_react(prop.expr)
-    if parsed is None:
-        print("Property", prop.expr, "is not a Reactivity formula")
+    spec = prop.expr
+    optres = check_explain_react_spec(model, spec)
+    if optres is None:
+        print(f"property {prop.expr} is not a valid Reactive formula")
         continue
 
-    lhs, rhs = parsed
-
-    res, trace = repeatedly_explain(model, lhs)
-    if not res or repeatedly(model, rhs):
+    res, trace = optres
+    if res:
         print(f"property {prop.expr} is respected")
     else:
         print(f"property {prop.expr} is not respected")
-        print_trace(model, trace)
+        for line in trace:
+            print(line)
 
 pynusmv.init.deinit_nusmv()
