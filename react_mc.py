@@ -126,7 +126,7 @@ def repeatedly_explain(model: BddFsm, spec: Spec) -> tuple[Literal[True], list[B
     return False, None
 
 def check_explain_react_spec(model: BddFsm, spec: Spec) -> Optional[tuple[Literal[True], None] | tuple[Literal[False], list[BDD]]]:
-    parsed = parse_react(prop.expr)
+    parsed = parse_react(spec)
     if parsed is None:
         return None
     for lhs, rhs in parsed:
