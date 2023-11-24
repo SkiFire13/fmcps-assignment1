@@ -83,14 +83,14 @@ def find_path(model: BddFsm, start: BDD, goal: BDD) -> list[BDD]:
         conj = new & goal
         if conj.isnot_false():
             last = model.pick_one_state(conj)
-            trace = [last]
+            path = [last]
             for front in reversed(frontiers):
                 pred = model.pre(last)
                 state = model.pick_one_state(front & pred)
-                trace.append(state)
+                path.append(state)
                 last = state
-            trace.reverse()
-            return trace
+            path.reverse()
+            return path
         frontiers.append(new)
         new = model.post(new) - reach
         reach = reach + new
