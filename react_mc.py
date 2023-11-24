@@ -3,9 +3,9 @@ import sys
 
 from typing import Literal, Optional
 
-from pynusmv.prop import Spec
-from pynusmv.fsm import BddFsm
 from pynusmv.dd import BDD
+from pynusmv.fsm import BddFsm
+from pynusmv.prop import Spec
 
 pynusmv.init.init_nusmv()
 
