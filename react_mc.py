@@ -69,7 +69,7 @@ def repeatedly(model: BddFsm, spec: Spec) -> bool:
         new = model.pre(recur)
         while new.isnot_false():
             prereach = prereach + new
-            if prereach.imply(recur):
+            if recur.entailed(prereach):
                 return True
             new = model.pre(new) - prereach
         recur = recur & prereach
