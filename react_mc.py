@@ -75,6 +75,16 @@ def repeatedly(model: BddFsm, spec: Spec) -> bool:
         recur = recur & prereach
     return False
 
+def path_from_frontiers(model: BddFsm, frontiers: list[BDD], last: BDD) -> list[BDD]:
+    path = [last]
+    for front in reversed(frontiers):
+        pred = model.pre(last)
+        state = model.pick_one_state(front & pred)
+        path.append(state)
+        last = state
+    path.reverse()
+    return path
+
 def find_path(model: BddFsm, start: BDD, goal: BDD) -> list[BDD]:
     reach = start
     new = start
@@ -83,14 +93,7 @@ def find_path(model: BddFsm, start: BDD, goal: BDD) -> list[BDD]:
         conj = new & goal
         if conj.isnot_false():
             last = model.pick_one_state(conj)
-            path = [last]
-            for front in reversed(frontiers):
-                pred = model.pre(last)
-                state = model.pick_one_state(front & pred)
-                path.append(state)
-                last = state
-            path.reverse()
-            return path
+            return path_from_frontiers(model, frontiers, last)
         frontiers.append(new)
         new = model.post(new) - reach
         reach = reach + new
