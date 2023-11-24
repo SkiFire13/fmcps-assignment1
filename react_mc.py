@@ -86,7 +86,7 @@ def state_trace_until(model: BddFsm, start: BDD, goal: BDD) -> list[BDD]:
             return build_state_trace(model, frontiers, last)
         frontiers.append(new)
         new = model.post(new) - reach
-        reach = reach | new
+        reach = reach + new
     raise "Trace goal should be reachable"
 
 def build_state_trace(model: BddFsm, frontiers: list[BDD], last: BDD) -> list[BDD]:
