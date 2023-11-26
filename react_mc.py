@@ -188,22 +188,23 @@ def repeatedly(model: BddFsm, spec: Spec) -> bool:
     # `spec` can't be true repeatedly. Hence return False.
     return False
 
-def find_repeating_state(model: BddFsm, recur: BDD) -> State:
+def find_repeating_state(model: BddFsm, recur: BDD, prereach: BDD) -> State:
     """
     Returns a repeating state, that is a state that can be visited repeatedly,
     given the `model` and the set `recur` of states that satisfy `spec` and
     can be reached starting from itself. 
     """
-    # TODO: Verify this algorithm or change it to the one given by the professor.
+    s = model.pick_one_state(recur)
     while True:
-        postreach = BDD.false()
-        new = model.post(recur)
+        r = BDD.false()
+        new = model.post(s) & prereach
         while new.isnot_false():
-            postreach = postreach + new
-            if recur.entailed(postreach):
-                return model.pick_one_state(recur)
-            new = model.post(postreach) - postreach
-        recur = recur & postreach
+            r = r + new
+            new = (model.post(new) & prereach) - r
+        r = r & recur
+        if s.entailed(r):
+            return s
+        s = model.pick_one_state(r)
 
 def execution_from_frontiers(model: BddFsm, frontiers: list[BDD], goal: State) -> list[State]:
     """
@@ -265,12 +266,12 @@ def execution_to_explanation(model: BddFsm, execution: list[State]) -> list[dict
         explanation.append(s2.get_str_values())
     return explanation
 
-def build_explanation(model: BddFsm, recur: BDD) -> list[dict[str, str]]:
+def build_explanation(model: BddFsm, recur: BDD, prereach: BDD) -> list[dict[str, str]]:
     """
     Returns an explanation of how `model` can repeatedly visit the `recur` set of states.
     """
     # First find a state that can actually be visited repeatedly,
-    s = find_repeating_state(model, recur)
+    s = find_repeating_state(model, recur, prereach)
     # Then build the execution from the initial state until s
     reach_execution = find_execution(model, model.init, s)
     # Then build the execution from post(s) until s.
@@ -302,7 +303,7 @@ def repeatedly_explain(model: BddFsm, spec: Spec) -> tuple[Literal[True], list[B
             # already conclude that it won't change, and hence there is a cycle.
             # Thus return True and build an explanation for it.
             if recur.entailed(prereach):
-                return True, build_explanation(model, recur)
+                return True, build_explanation(model, recur, prereach)
             new = model.pre(new) - prereach
         recur = recur & prereach
     # If `recur` became empty then it means there's no cycle and so
