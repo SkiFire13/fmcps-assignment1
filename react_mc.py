@@ -149,12 +149,14 @@ def parse_react(spec: Spec) -> Optional[list[tuple[Spec, Spec]]]:
     # if we are here, all conjuncts are of the correct form
     return implications
 
-def find_repeating_state(model: BddFsm, recur: BDD, prereach: BDD) -> Tuple[State, list[BDD]]:
+def find_looping_execution(model: BddFsm, recur: BDD, prereach: BDD) -> list[State]:
     """
-    Returns a repeating state, that is a state that can be visited repeatedly,
-    given the `model` and the set `recur` of states that satisfy `spec` and
-    can be reached starting from itself. 
+    Returns a looping execution, that is a sequence of states where the first state
+    can appear again after the first one, containing at least one state from `recur`.
+    It is assumed that `prereach` contains all the states required for such execution.
+    It is guaranteed that the returned execution will contain only states in `prereach`.
     """
+    # TODO: Comments
     s = model.pick_one_state(recur)
     r = BDD.false()
     while True:
@@ -163,7 +165,7 @@ def find_repeating_state(model: BddFsm, recur: BDD, prereach: BDD) -> Tuple[Stat
         while new.isnot_false():
             frontiers.append(new)
             if s.entailed(new):
-                return s, frontiers
+                return execution_from_frontiers(model, frontiers, s)
             r = r + new
             new = (model.post(new) & prereach) - r
         r = r & recur
@@ -173,12 +175,14 @@ def execution_from_frontiers(model: BddFsm, frontiers: list[BDD], goal: State) -
     """
     Builds an execution until the state `goal` given a set of frontiers used
     while trying to reach it from some set of states.
+
+    Note that it is expected for `goal` to be somewhere in the list of frontiers.
     """
 
     # Find the point in frontiers where `goal` was visited.
     while not goal.entailed(frontiers[-1]):
         frontiers.pop()
-    # Ignore the last frontier containing with `goal`
+    # Ignore the frontier containing `goal` since we directly select `goal`.
     frontiers.pop()
 
     # We build `execution` by working out way back from `goal`.
@@ -240,8 +244,8 @@ def check_explain_react_single(model: BddFsm, lhs: Spec, rhs: Spec) -> Result[No
     are their value.
     """
 
-    # First, compute the set of reachable states as a BDD.
-    # Also remember the set of frontiers since they will be used later for building the trace.
+    # First, compute the set of reachable states as a BDD. This is useful for both ignoring
+    # unreachable states and for building the final execution until the repeating state.
     reach = model.init
     new = model.init
     reach_frontiers = []
@@ -249,34 +253,44 @@ def check_explain_react_single(model: BddFsm, lhs: Spec, rhs: Spec) -> Result[No
         reach_frontiers.append(new)
         new = model.post(new) - reach
         reach = reach + new
-    
+
     # Convert the boolean formulas to BDDs.
     bddlhs = spec_to_bdd(model, lhs)
     bddrhs = spec_to_bdd(model, rhs)
-    
+
     # We want to recur such that:
     # - states satisfying lhs are visited repeatedly, hence making `GF lhs` true
     # - states satisfying rhs are never visited, hence making `GF rhs` false
+    # Hence we'll loop for a loop containing a reachable state satisfying `lhs`,
+    # but without any states satisfying `rhs` in the whole loop.
 
-    recur = (reach - bddrhs) & bddlhs
+    # The set of states we want to visit repeatedly, which is composed by the reachable
+    # states satisfying `lhs` but not `rhs`
+    recur = (reach & bddlhs) - bddrhs
 
     while recur.isnot_false():
-        # Only visit states that don't satisfy `rhs`.
+        # Only consider states that don't satisfy `rhs`.
         new = model.pre(recur) - bddrhs
         prereach = BDD.false()
-        
+
         while new.isnot_false():
             prereach = prereach + new
 
-            # If `recur` is contained in `prereach` then ``
+            # If `recur` is contained in `prereach` then `recur` is not gonna change,
+            # hence it must contain a loop.
             if recur.entailed(prereach):
-                s, loop_frontiers = find_repeating_state(model, recur, prereach)
-                loop_execution = execution_from_frontiers(model, loop_frontiers, s)
-                reach_execution = execution_from_frontiers(model, reach_frontiers, s)
-                return False, execution_to_explanation(model, reach_execution + loop_execution)
-            
-            # Only visit states that don't satisfy `rhs`.
+                # Find the looping part of the execution. It is guaranteed to contain only
+                # states from `prereach`, which in turn contains only states that don't satisfy `rhs`,
+                # which is required to falsify `GF rhs`` in the final execution.
+                looping_execution = find_looping_execution(model, recur, prereach)
+                # Find an execution leading to the repeating state.
+                reach_execution = execution_from_frontiers(model, reach_frontiers, looping_execution[-1])
+                # Finally, convert the execution to the required textual representation and return it.
+                return False, execution_to_explanation(model, reach_execution + looping_execution)
+
+            # Only consider states that don't satisfy `rhs`.
             new = model.pre(new) - bddrhs - prereach
+
         recur = recur & prereach
 
     return True, None
