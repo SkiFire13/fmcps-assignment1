@@ -149,61 +149,24 @@ def parse_react(spec: Spec) -> Optional[list[tuple[Spec, Spec]]]:
     # if we are here, all conjuncts are of the correct form
     return implications
 
-def reachable_bdd(model: BddFsm) -> BDD:
-    """
-    Returns the set of `model`'s reachable states as a BDD
-    and computed through symbolic execution.
-    """
-    reach = model.init
-    new = model.init
-    while new.isnot_false():
-        new = model.post(new) - reach
-        reach = reach + new
-    return reach
-
-def repeatedly(model: BddFsm, spec: Spec) -> bool:
-    """
-    Returns whether the given `model` satisfies `spec` repeatedly.
-    """
-    bddspec = spec_to_bdd(model, spec)
-    reach = reachable_bdd(model)
-    # We start from the set of reachable states that satisfy `spec`.
-    recur = reach & bddspec
-    while recur.isnot_false():
-        # We iteratively compute `prereach`, the set of states that
-        # can reach recur in at least 1 step, by repeatedly applying `pre`.
-        prereach = BDD.false()
-        new = model.pre(recur)
-        while new.isnot_false():
-            prereach = prereach + new
-            # Since we'll update `recur` by intersecting it with
-            # prereach, if `recur` is included in `prereach` we can
-            # already conclude that it won't change, and hence there is a cycle.
-            # Thus return True.
-            if recur.entailed(prereach):
-                return True
-            new = model.pre(new) - prereach
-        recur = recur & prereach
-    # If `recur` became empty then it means there's no cycle and so
-    # `spec` can't be true repeatedly. Hence return False.
-    return False
-
-def find_repeating_state(model: BddFsm, recur: BDD, prereach: BDD) -> State:
+def find_repeating_state(model: BddFsm, recur: BDD, prereach: BDD) -> Tuple[State, list[BDD]]:
     """
     Returns a repeating state, that is a state that can be visited repeatedly,
     given the `model` and the set `recur` of states that satisfy `spec` and
     can be reached starting from itself. 
     """
     s = model.pick_one_state(recur)
+    r = BDD.false()
     while True:
-        r = BDD.false()
         new = model.post(s) & prereach
+        frontiers = []
         while new.isnot_false():
+            frontiers.append(new)
+            if s.entailed(new):
+                return s, frontiers
             r = r + new
             new = (model.post(new) & prereach) - r
         r = r & recur
-        if s.entailed(r):
-            return s
         s = model.pick_one_state(r)
 
 def execution_from_frontiers(model: BddFsm, frontiers: list[BDD], goal: State) -> list[State]:
@@ -211,6 +174,13 @@ def execution_from_frontiers(model: BddFsm, frontiers: list[BDD], goal: State) -
     Builds an execution until the state `goal` given a set of frontiers used
     while trying to reach it from some set of states.
     """
+
+    # Find the point in frontiers where `goal` was visited.
+    while not goal.entailed(frontiers[-1]):
+        frontiers.pop()
+    # Ignore the last frontier containing with `goal`
+    frontiers.pop()
+
     # We build `execution` by working out way back from `goal`.
     last = goal
     execution = [goal]
@@ -229,23 +199,6 @@ def execution_from_frontiers(model: BddFsm, frontiers: list[BDD], goal: State) -
     # so we need to reverse it to get the correct execution order.
     execution.reverse()
     return execution
-
-def find_execution(model: BddFsm, start: BDD, goal: State) -> list[State]:
-    """
-    Finds an execution from a state in the given set of states `start` until the state `goal`.
-    """
-    # TODO: this is essentially recomputing reach but until goal
-    #       Can I reuse a set of frontiers from the initial reach calculation?
-    reach = start
-    new = start
-    frontiers: list[BDD] = []
-    while new.isnot_false():
-        if goal.entailed(new):
-            return execution_from_frontiers(model, frontiers, goal)
-        frontiers.append(new)
-        new = model.post(new) - reach
-        reach = reach + new
-    raise Exception("Execution doesn't exist")
 
 def execution_to_explanation(model: BddFsm, execution: list[State]) -> list[dict[str, str]]:
     """
@@ -266,58 +219,72 @@ def execution_to_explanation(model: BddFsm, execution: list[State]) -> list[dict
         explanation.append(s2.get_str_values())
     return explanation
 
-def build_explanation(model: BddFsm, recur: BDD, prereach: BDD) -> list[dict[str, str]]:
-    """
-    Returns an explanation of how `model` can repeatedly visit the `recur` set of states.
-    """
-    # First find a state that can actually be visited repeatedly,
-    s = find_repeating_state(model, recur, prereach)
-    # Then build the execution from the initial state until s
-    reach_execution = find_execution(model, model.init, s)
-    # Then build the execution from post(s) until s.
-    # Note: an execution from s to s would be simply made by s,
-    # hence we need to start from post(s). Also, `reach_execution`
-    # already ends in `s`.
-    loop_execution = find_execution(model, model.post(s), s)
-    # Finally convert the execution to an explanation.
-    return execution_to_explanation(model, reach_execution + loop_execution)
-
 Ok = TypeVar("Ok")
 Err = TypeVar("Err")
 Result = Union[Tuple[Literal[True], Ok], Tuple[Literal[False], Err]]
 
-def repeatedly_explain(model: BddFsm, spec: Spec) -> Result[list[dict[str, str]], None]:
+def check_explain_react_single(model: BddFsm, lhs: Spec, rhs: Spec) -> Result[None, list[dict[str, str]]]:
     """
-    Returns whether the given `model` satisfies `spec` repeatedly.
-    Returns also an explanation for why the model satisfies `spec`, if it is the case.
+    Returns whether `model` satisfies or not the reactivity formula `GF lhs -> GF rhs`,
+    that is, whether all executions of the model satisfy it or not.
+    Returns also an explanation for why the model does not satisfy the formula, if it is the case.
+
+    The result is a tuple where the first element is a boolean telling whether the formula is satisfied,
+    and the second element is either `None` if the first element is `True`, or an execution
+    of the SMV model violating `spec` otherwise.
+
+    The execution is a tuple of alternating states and inputs, starting
+    and ending with a state. The execution is looping: the last state should be
+    somewhere else in the sequence. States and inputs are represented by dictionaries
+    where keys are state and inputs variable of the loaded SMV model, and values
+    are their value.
     """
-    bddspec = spec_to_bdd(model, spec)
-    reach = reachable_bdd(model)
-    # We start from the set of reachable states that satisfy `spec`.
-    recur = reach & bddspec
+
+    # First, compute the set of reachable states as a BDD.
+    # Also remember the set of frontiers since they will be used later for building the trace.
+    reach = model.init
+    new = model.init
+    reach_frontiers = []
+    while new.isnot_false():
+        reach_frontiers.append(new)
+        new = model.post(new) - reach
+        reach = reach + new
+    
+    # Convert the boolean formulas to BDDs.
+    bddlhs = spec_to_bdd(model, lhs)
+    bddrhs = spec_to_bdd(model, rhs)
+    
+    # We want to recur such that:
+    # - states satisfying lhs are visited repeatedly, hence making `GF lhs` true
+    # - states satisfying rhs are never visited, hence making `GF rhs` false
+
+    recur = (reach - bddrhs) & bddlhs
+
     while recur.isnot_false():
-        # We iteratively compute `prereach`, the set of states that
-        # can reach recur in at least 1 step, by repeatedly applying `pre`.
+        # Only visit states that don't satisfy `rhs`.
+        new = model.pre(recur) - bddrhs
         prereach = BDD.false()
-        new = model.pre(recur)
+        
         while new.isnot_false():
             prereach = prereach + new
-            # Since we'll update `recur` by intersecting it with
-            # prereach, if `recur` is included in `prereach` we can
-            # already conclude that it won't change, and hence there is a cycle.
-            # Thus return True and build an explanation for it.
+
+            # If `recur` is contained in `prereach` then ``
             if recur.entailed(prereach):
-                return True, build_explanation(model, recur, prereach)
-            new = model.pre(new) - prereach
+                s, loop_frontiers = find_repeating_state(model, recur, prereach)
+                loop_execution = execution_from_frontiers(model, loop_frontiers, s)
+                reach_execution = execution_from_frontiers(model, reach_frontiers, s)
+                return False, execution_to_explanation(model, reach_execution + loop_execution)
+            
+            # Only visit states that don't satisfy `rhs`.
+            new = model.pre(new) - bddrhs - prereach
         recur = recur & prereach
-    # If `recur` became empty then it means there's no cycle and so
-    # `spec` can't be true repeatedly. Hence return False.
-    return False, None
+
+    return True, None
 
 def check_explain_react_spec(spec: Spec) -> Optional[Result[None, list[dict[str, str]]]]:
     """
     Returns whether the loaded SMV model satisfies or not the reactivity formula
-    `spec`, that is, whether all executions of the model satisfies `spec`
+    `spec`, that is, whether all executions of the model satisfy `spec`
     or not. Returns also an explanation for why the model does not satisfy
     `spec`, if it is the case.
 
@@ -341,18 +308,9 @@ def check_explain_react_spec(spec: Spec) -> Optional[Result[None, list[dict[str,
     # Handle the terms of the conjunctions separately.
     # If any of them is not satisfied then the whole conjunction is unsatisfied.
     for lhs, rhs in parsed:
-        # We need to check whether `model` satisfies GF lhs -> GF rhs.
-        # Check GF rhs first since the counterexample is found when checking GF lhs,
-        # and that's expensive.
-
-        # If GF rhs is satisfied then the whole implication is satisfied.
-        if not repeatedly(model, rhs):
-            # If GF rhs is not satisfied then we need to check whether GF lhs is
-            # satisfied. If it is then the given trace is a counterexample
-            # for the whole GF lhs -> GF rhs.
-            res = repeatedly_explain(model, lhs)
-            if res[0]:
-                return False, res[1]
+        res = check_explain_react_single(model, lhs, rhs)
+        if not res[0]:
+            return False, res[1]
     return True, None
 
 if __name__ == "__main__":
