@@ -3,7 +3,7 @@ import sys
 
 from collections import deque
 
-from typing import Literal, Optional
+from typing import Literal, Optional, Tuple, TypeVar, Union
 
 from pynusmv.dd import BDD, State
 from pynusmv.fsm import BddFsm
@@ -129,7 +129,7 @@ def parse_react(spec: Spec) -> Optional[list[tuple[Spec, Spec]]]:
     # the right child of a context is the main formula
     spec = spec.cdr
     # check all conjuncts of the main formula
-    working = deque()
+    working: deque[Spec] = deque()
     working.append(spec)
     # this holds the (f_i, g_i)s that will be returned on success
     implications = []
@@ -238,14 +238,14 @@ def find_execution(model: BddFsm, start: BDD, goal: State) -> list[State]:
     #       Can I reuse a set of frontiers from the initial reach calculation?
     reach = start
     new = start
-    frontiers = []
+    frontiers: list[BDD] = []
     while new.isnot_false():
         if goal.entailed(new):
             return execution_from_frontiers(model, frontiers, goal)
         frontiers.append(new)
         new = model.post(new) - reach
         reach = reach + new
-    raise "Execution doesn't exist"
+    raise Exception("Execution doesn't exist")
 
 def execution_to_explanation(model: BddFsm, execution: list[State]) -> list[dict[str, str]]:
     """
@@ -282,7 +282,11 @@ def build_explanation(model: BddFsm, recur: BDD, prereach: BDD) -> list[dict[str
     # Finally convert the execution to an explanation.
     return execution_to_explanation(model, reach_execution + loop_execution)
 
-def repeatedly_explain(model: BddFsm, spec: Spec) -> tuple[Literal[True], list[BDD]] | tuple[Literal[False], None]:
+Ok = TypeVar("Ok")
+Err = TypeVar("Err")
+Result = Union[Tuple[Literal[True], Ok], Tuple[Literal[False], Err]]
+
+def repeatedly_explain(model: BddFsm, spec: Spec) -> Result[list[dict[str, str]], None]:
     """
     Returns whether the given `model` satisfies `spec` repeatedly.
     Returns also an explanation for why the model satisfies `spec`, if it is the case.
@@ -310,7 +314,7 @@ def repeatedly_explain(model: BddFsm, spec: Spec) -> tuple[Literal[True], list[B
     # `spec` can't be true repeatedly. Hence return False.
     return False, None
 
-def check_explain_react_spec(spec: Spec) -> Optional[tuple[Literal[True], None] | tuple[Literal[False], list[BDD]]]:
+def check_explain_react_spec(spec: Spec) -> Optional[Result[None, list[dict[str, str]]]]:
     """
     Returns whether the loaded SMV model satisfies or not the reactivity formula
     `spec`, that is, whether all executions of the model satisfies `spec`
@@ -346,9 +350,10 @@ def check_explain_react_spec(spec: Spec) -> Optional[tuple[Literal[True], None] 
             # If GF rhs is not satisfied then we need to check whether GF lhs is
             # satisfied. If it is then the given trace is a counterexample
             # for the whole GF lhs -> GF rhs.
-            res, trace = repeatedly_explain(model, lhs)
-            if res:
-                return False, trace
+            res = repeatedly_explain(model, lhs)
+            if res[0]:
+                return False, res[1]
+    return True, None
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
@@ -367,7 +372,7 @@ if __name__ == "__main__":
             print("property is not LTLSPEC, skipping")
             continue
         res = check_explain_react_spec(spec)
-        if res == None:
+        if res is None:
             print('Property is not a Reactivity formula, skipping')
         elif res[0] == True:
             print("Property is respected")
