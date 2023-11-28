@@ -223,11 +223,9 @@ def execution_to_explanation(model: BddFsm, execution: list[State]) -> list[dict
         explanation.append(s2.get_str_values())
     return explanation
 
-Ok = TypeVar("Ok")
-Err = TypeVar("Err")
-Result = Union[Tuple[Literal[True], Ok], Tuple[Literal[False], Err]]
+Res = Union[Tuple[Literal[True], None], Tuple[Literal[False], list[dict[str, str]]]]
 
-def check_explain_react_single(model: BddFsm, lhs: Spec, rhs: Spec) -> Result[None, list[dict[str, str]]]:
+def check_explain_react_single(model: BddFsm, lhs: Spec, rhs: Spec) -> Res:
     """
     Returns whether `model` satisfies or not the reactivity formula `GF lhs -> GF rhs`,
     that is, whether all executions of the model satisfy it or not.
@@ -295,7 +293,7 @@ def check_explain_react_single(model: BddFsm, lhs: Spec, rhs: Spec) -> Result[No
 
     return True, None
 
-def check_explain_react_spec(spec: Spec) -> Optional[Result[None, list[dict[str, str]]]]:
+def check_explain_react_spec(spec: Spec) -> Optional[Res]:
     """
     Returns whether the loaded SMV model satisfies or not the reactivity formula
     `spec`, that is, whether all executions of the model satisfy `spec`
