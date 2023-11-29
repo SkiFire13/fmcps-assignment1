@@ -225,7 +225,7 @@ def execution_to_explanation(model: BddFsm, execution: list[State]) -> list[dict
 
 Res = Union[Tuple[Literal[True], None], Tuple[Literal[False], list[dict[str, str]]]]
 
-def check_explain_react_single(model: BddFsm, lhs: Spec, rhs: Spec) -> Res:
+def check_explain_react_single(model: BddFsm, reach: BDD, reach_frontiers: list[BDD], lhs: Spec, rhs: Spec) -> Res:
     """
     Returns whether `model` satisfies or not the reactivity formula `GF lhs -> GF rhs`,
     that is, whether all executions of the model satisfy it or not.
@@ -240,18 +240,10 @@ def check_explain_react_single(model: BddFsm, lhs: Spec, rhs: Spec) -> Res:
     somewhere else in the sequence. States and inputs are represented by dictionaries
     where keys are state and inputs variable of the loaded SMV model, and values
     are their value.
-    """
 
-    # TODO: move this to check_explain_react_spec to avoid recomputing it.
-    # First, compute the set of reachable states as a BDD. This is useful for both ignoring
-    # unreachable states and for building the final execution until the repeating state.
-    reach = model.init
-    new = model.init
-    reach_frontiers = []
-    while new.isnot_false():
-        reach_frontiers.append(new)
-        new = model.post(new) - reach
-        reach = reach + new
+    `reach` must be the set of reachable states of `model` and `reach_frontiers` must be
+    the list of frontiers explored while looking for it.
+    """
 
     # Convert the boolean formulas to BDDs.
     bddlhs = spec_to_bdd(model, lhs)
@@ -316,12 +308,24 @@ def check_explain_react_spec(spec: Spec) -> Optional[Res]:
     parsed = parse_react(spec)
     if parsed is None:
         return None
+
     # Retrieve the model from the global database.
     model = pynusmv.glob.prop_database().master.bddFsm
+
+    # First, compute the set of reachable states as a BDD. This is useful for both ignoring
+    # unreachable states and for building the final execution until the repeating state.
+    reach = model.init
+    new = model.init
+    reach_frontiers = []
+    while new.isnot_false():
+        reach_frontiers.append(new)
+        new = model.post(new) - reach
+        reach = reach + new
+
     # Handle the terms of the conjunctions separately.
     # If any of them is not satisfied then the whole conjunction is unsatisfied.
     for lhs, rhs in parsed:
-        res = check_explain_react_single(model, lhs, rhs)
+        res = check_explain_react_single(model, reach, reach_frontiers, lhs, rhs)
         if not res[0]:
             return False, res[1]
     return True, None
