@@ -242,6 +242,7 @@ def check_explain_react_single(model: BddFsm, lhs: Spec, rhs: Spec) -> Res:
     are their value.
     """
 
+    # TODO: move this to check_explain_react_spec to avoid recomputing it.
     # First, compute the set of reachable states as a BDD. This is useful for both ignoring
     # unreachable states and for building the final execution until the repeating state.
     reach = model.init
