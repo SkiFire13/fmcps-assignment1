@@ -8,6 +8,8 @@
 #let Reach = $R e a c h$
 #let New = $N e w$
 #let Frontiers = $F r o n t i e r s$
+#let Recur = $R e c u r$
+#let Prereach = $P r e R e a c h$
 
 #let Pre = text(font: "", smallcaps("Pre"))
 #let Post = text(font: "", smallcaps("Post"))
@@ -55,7 +57,18 @@ Since the outer operand is a disjunction it sufficies to find a trace that satis
 
 The problem thus reduces to showing a trace that satisfies a formula in the form $#G #F f_i and #F #G not g_i$, that is a trace where $f_i$ is satisfied repeatedly and $not g_i$ is satisfied persistently.
 
-If there exist a trace that satisfies the following property then it must eventually always satisfy $not g_i$, and from that point onward it must also repeatedly satisfy $f_i$. Hence it's enough to consider the set of reachable states that satisfy $not g_i$ and look there for a loop that includes a state that satisfies $f_i$, similarly to how it's possible to check Repeatedly formulas, that is formulas in the form $#G #F h$.
+This is true if and only if there's a set of reachable states that satisfy $f_i$ and $not g_i$ and each state in the set can reach another state in the set by only going through states that satisfy $not g_i$.
+
+To see why it is sufficient, consider a trace that first reaches one of the states in the set, which is possible because it is only made up of reachable states, and then repeatedly reaches another element of the set by only going through states that satify $not g_i$, which is possible by definition. This trace repeatedly visits states in the set, which satisfy $f_i$ and hence the trace satisfies $#G #F f_i$. It also persistently visits states that satisfy $not g_i$, because both the states in the sets and the states visited when reaching other states in the set all satisfy $not g_i$, and hence the trace satisfies $#F #G g_i$. Hence the criteria proposed is sufficient. 
+
+To see why it is necessary, consider a trace that satisfies $#G #F f_i and #F #G not g_i$. Since it satisfies $#F #G not g_i$, that is persistently $not g_i$, there must exist a state $s_x$ in the trace from which point onward all states will satisfy $g_i$. Since the trace also satisfies $#G #F f_i$, that is repeatedly $f_i$, it means there must exist infinite states (possibly repeating) in the trace after $s_x$ that satisfy $f_i$. The set of those states is composed of states that:
+
+- are reachable, because part of a trace;
+- satisfy $f_i$, by definition;
+- satisfy $not g_i$, because they appear after $s_x$ in the trace;
+- can reach other states of the set going through only states that satisfy $not g_i$, because there is always another state further in the trace that's part of the set, and every state in the trace between them satisfy $not g_i$ due to appearing after $s_x$.
+
+Hence the criteria proposed is necessary.
 
 == Implementation
 
@@ -63,11 +76,11 @@ The implementation is made up of the following steps:
 
 - parse the reactivity formula;
 
-- computing the set of reachable states;
+- compute the set of reachable states;
 
-- for each pair of subformulas $(f_i, g_i)$, find a loop in the reachable states that satisfy $not g_i$ and contains at least a state that that satisfies $f_i$;
+- for each pair of subformulas $(f_i, g_i)$, try to find a set of reachable states that satisfy $f_i$ and $not g_i$ and can reach a state in the set by only going through states that satisfy $g_i$;
 
-- if a loop is found, compute the counterexample trace containing it.
+- if it is found, try to find a loop in it to create the counterexample.
 
 === Parsing
 
@@ -96,7 +109,33 @@ The set of reachable states is computed by repeatedly applying the #Post operato
   ([*end while*],)
 })
 
-=== Loop detection
+=== Compute the repeating set of states
+
+The repeating set detection works similarly to the repeating set detection for the formula $#G #F f_i$, that is it iteratively computes the set of states $Recur$ that can reach another another 
+
+the set of states that can reach a state in $Recur$ in at least 1 step is iteratively computed and intersected it with $Recur$, until either $Recur$ becomes empty, in which case there's no loop, or $Recur$ doesn't change, in which case there is a loop. The only difference is that $#F #G not g_i$ also needs to be satisfied, that is the loop can only include states that satisfy $not g_i$. In particular this can be achieved by modifying the algorith such that any state that satisfy $g_i$ is removed from $Reach$, or the result of $Pre$ or $Post$.
+
+#algorithm({
+  import algorithmic: *
+  Assign[$Recur$][$Intersect(Diff(Reach, g_i), f_i)$]
+  While(cond: [*not* $IsEmpty(Recur)$], {
+    Assign[$New$][$Diff(Pre(Recur), g_i)$]
+    Assign[$Prereach$][$emptyset$]
+    While(cond: [*not* $IsEmpty(New)$], {
+      Assign[$Prereach$][$Union(Prereach, New)$]
+      If(cond: [$IsSubset(Recur, Prereach)$], {
+        ([ \/\/ There is a loop in $Recur$ using only states in $Prereach$ ],)
+      })
+      ([*end if*],)
+      Assign[$New$][$Diff(Diff(Pre(New), g_i), Prereach)$]
+    })
+    Assign[$Recur$][$Intersect(Recur, Prereach)$]
+    ([*end while*],)
+  })
+  ([*end while*],)
+  ([ \/\/ There's no loop ],)
+})
 
 === Building the counterexample
 
+For building the counterexample the same approach as 
