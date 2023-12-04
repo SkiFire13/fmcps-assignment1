@@ -9,7 +9,7 @@
 #let New = $N e w$
 #let Frontiers = $F r o n t i e r s$
 #let Recur = $R e c u r$
-#let Prereach = $P r e R e a c h$
+#let PreReach = $P r e R e a c h$
 
 #let Pre = text(font: "", smallcaps("Pre"))
 #let Post = text(font: "", smallcaps("Post"))
@@ -18,6 +18,8 @@
 #let Intersect = text(font: "", smallcaps("Intersect"))
 #let IsSubset = text(font: "", smallcaps("IsSubset"))
 #let IsEmpty = text(font: "", smallcaps("IsEmpty"))
+
+#let Comment(comment) = ( [\/\/ #comment],)
 
 #set text(size: 12pt, font: "New Computer Modern")
 
@@ -44,7 +46,7 @@ $
 
 and if it doesn't provide a counterexample.
 
-As usual, it is easier to try to falsify the formula and look for a counterexample, rather than proving that the formula always holds. By falsifying the formula we get:
+As usual, it's easier to try to falsify the formula and look for a counterexample, rather than proving that the formula always holds. By falsifying the formula we get:
 
 $
   not and.big_(i=1)^n (#G #F f_i -> #G #F g_i)
@@ -94,7 +96,7 @@ The provided code already does implements the required checks to ensure a formul
 
 === Reachability
 
-The set of reachable states is computed by repeatedly applying the #Post operator to the current frontier and removing all the states already seen from it. The frontiers are also incrementally combined in order to form the set of reachable states. The list of frontiers is also kept since it will be useful when computing the counterexample trace.
+The set of reachable states is computed by repeatedly applying the #Post operator to the current frontier and removing all the states already seen from it in order to get the new frontier. The frontiers are also incrementally combined in order to form the set of reachable states. The list of frontiers is also kept since it will be useful when computing the counterexample trace.
 
 #algorithm({
   import algorithmic: *
@@ -111,31 +113,49 @@ The set of reachable states is computed by repeatedly applying the #Post operato
 
 === Compute the repeating set of states
 
-The repeating set detection works similarly to the repeating set detection for the formula $#G #F f_i$, that is it iteratively computes the set of states $Recur$ that can reach another another 
-
-the set of states that can reach a state in $Recur$ in at least 1 step is iteratively computed and intersected it with $Recur$, until either $Recur$ becomes empty, in which case there's no loop, or $Recur$ doesn't change, in which case there is a loop. The only difference is that $#F #G not g_i$ also needs to be satisfied, that is the loop can only include states that satisfy $not g_i$. In particular this can be achieved by modifying the algorith such that any state that satisfy $g_i$ is removed from $Reach$, or the result of $Pre$ or $Post$.
+The repeating set detection works similarly to the repeating set detection for the formula $#G #F f_i$, that is it tries to compute the set of states $Recur$ that can reach another state in the same set $Recur$. The additional constraint that all the states needs to satisfy $not g_i$ is guaranteed by filtering out all the states that satisfy $g_i$ from the set of reachable states and the set of predecessors used in the search, that is replacing $Reach$ with $Diff(Reach, g_i)$ and $Pre(S)$ with $Diff(Pre(S), g_i)$.
 
 #algorithm({
   import algorithmic: *
   Assign[$Recur$][$Intersect(Diff(Reach, g_i), f_i)$]
   While(cond: [*not* $IsEmpty(Recur)$], {
     Assign[$New$][$Diff(Pre(Recur), g_i)$]
-    Assign[$Prereach$][$emptyset$]
+    Assign[$PreReach$][$emptyset$]
     While(cond: [*not* $IsEmpty(New)$], {
-      Assign[$Prereach$][$Union(Prereach, New)$]
-      If(cond: [$IsSubset(Recur, Prereach)$], {
-        ([ \/\/ There is a loop in $Recur$ using only states in $Prereach$ ],)
+      Assign[$PreReach$][$Union(PreReach, New)$]
+      If(cond: [$IsSubset(Recur, PreReach)$], {
+        Comment[Every state in $Recur$ can reach another]
+        Comment[state in $Recur$ with at least 1 step and]
+        Comment[only visiting states satisfying $g_i$.]
       })
       ([*end if*],)
-      Assign[$New$][$Diff(Diff(Pre(New), g_i), Prereach)$]
+      Assign[$New$][$Diff(Diff(Pre(New), g_i), PreReach)$]
     })
-    Assign[$Recur$][$Intersect(Recur, Prereach)$]
+    Assign[$Recur$][$Intersect(Recur, PreReach)$]
     ([*end while*],)
   })
   ([*end while*],)
-  ([ \/\/ There's no loop ],)
+  ([ \/\/ There's no repeating set of states ],)
 })
 
 === Building the counterexample
 
-For building the counterexample the same approach as 
+For building the counterexample the same approach as for building counterexamples for Repeatedly formulas is used. // TODO: continue explaining why the same approach works
+
+#algorithm({
+  import algorithmic: *
+  // TODO
+  // s = model.pick_one_state(recur)
+  //   r = BDD.false()
+  //   while True:
+  //       new = model.post(s) & prereach
+  //       frontiers = []
+  //       while new.isnot_false():
+  //           frontiers.append(new)
+  //           if s.entailed(new):
+  //               return execution_from_frontiers(model, frontiers, s)
+  //           r = r + new
+  //           new = (model.post(new) & prereach) - r
+  //       r = r & recur
+  //       s = model.pick_one_state(r)
+})
