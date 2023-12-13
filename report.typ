@@ -55,22 +55,20 @@ $
   &= or.big_(i=1)^n (#G #F f_i and #F #G not g_i)
 $
 
-Since the outer operand is a disjunction it sufficies to find a trace that satisfies one of the inner formulas, and that will be a valid counterexample.
+Since the outer operand is a disjunction it sufficies to find a trace that satisfies one of the inner $#G #F f_i and #F #G not g_i$ formulas, and that will be a valid counterexample. The problem thus reduces to showing a trace where $f_i$ is satisfied repeatedly and $not g_i$ is satisfied persistently.
 
-The problem thus reduces to showing a trace that satisfies a formula in the form $#G #F f_i and #F #G not g_i$, that is a trace where $f_i$ is satisfied repeatedly and $not g_i$ is satisfied persistently.
+This is true if and only if there's a set $S$ of reachable states that satisfy $f_i$ and $not g_i$ and each state in $S$ can reach another state $S$ by only going through states that satisfy $not g_i$.
 
-This is true if and only if there's a set of reachable states that satisfy $f_i$ and $not g_i$ and each state in the set can reach another state in the set by only going through states that satisfy $not g_i$.
+To see why this is sufficient, consider a trace that first reaches one of the states in $S$, which is possible because it is only made up of reachable states, and then repeatedly reaches another element of $S$ by only going through states that satify $not g_i$, which is possible by definition. This trace repeatedly visits states in $S$, which all satisfy $f_i$ and hence the trace satisfies $#G #F f_i$. It also persistently visits states that satisfy $not g_i$, because both the states in $S$ and the states visited when reaching other states in $S$ all satisfy $not g_i$, and hence the trace satisfies $#F #G g_i$. Hence the criteria proposed is sufficient. 
 
-To see why it is sufficient, consider a trace that first reaches one of the states in the set, which is possible because it is only made up of reachable states, and then repeatedly reaches another element of the set by only going through states that satify $not g_i$, which is possible by definition. This trace repeatedly visits states in the set, which satisfy $f_i$ and hence the trace satisfies $#G #F f_i$. It also persistently visits states that satisfy $not g_i$, because both the states in the sets and the states visited when reaching other states in the set all satisfy $not g_i$, and hence the trace satisfies $#F #G g_i$. Hence the criteria proposed is sufficient. 
+To see why it is necessary, consider a trace that satisfies $#G #F f_i and #F #G not g_i$. Since it satisfies $#F #G not g_i$, that is persistently $not g_i$, there must exist a state $s_x$ in the trace from which point onward all states $s_y$ with $y >= x$ will satisfy $g_i$. Since the trace also satisfies $#G #F f_i$, that is repeatedly $f_i$, it means there must exist infinite states in the trace after $s_x$ that satisfy $f_i$. The set $S$ of those states is such that:
 
-To see why it is necessary, consider a trace that satisfies $#G #F f_i and #F #G not g_i$. Since it satisfies $#F #G not g_i$, that is persistently $not g_i$, there must exist a state $s_x$ in the trace from which point onward all states will satisfy $g_i$. Since the trace also satisfies $#G #F f_i$, that is repeatedly $f_i$, it means there must exist infinite states (possibly repeating) in the trace after $s_x$ that satisfy $f_i$. The set of those states is composed of states that:
+- all its states are reachable, because part of a trace;
+- all its states satisfy $f_i$, by definition;
+- all its states satisfy $not g_i$, because they appear after $s_x$ in the trace;
+- any of its states can reach another state of $S$ by going through only states that satisfy $not g_i$, because there is always another state further in the trace that's part of the set, and every state in the trace between them satisfy $not g_i$ due to appearing after $s_x$.
 
-- are reachable, because part of a trace;
-- satisfy $f_i$, by definition;
-- satisfy $not g_i$, because they appear after $s_x$ in the trace;
-- can reach other states of the set going through only states that satisfy $not g_i$, because there is always another state further in the trace that's part of the set, and every state in the trace between them satisfy $not g_i$ due to appearing after $s_x$.
-
-Hence the criteria proposed is necessary.
+Hence $S$ satisfy the criteria proposed, and hence it is necessary.
 
 == Implementation
 
@@ -80,9 +78,11 @@ The implementation is made up of the following steps:
 
 - compute the set of reachable states;
 
-- for each pair of subformulas $(f_i, g_i)$, try to find a set of reachable states that satisfy $f_i$ and $not g_i$ and can reach a state in the set by only going through states that satisfy $g_i$;
+- for each pair of subformulas $(f_i, g_i)$, try to find a set $Recur$ of reachable states that satisfy $f_i$ and $not g_i$ and can reach a state in $Recur$ with at least one step by only going through states that satisfy $g_i$;
 
-- if it is found, try to find a loop in it to create the counterexample.
+- if it is found, then the initial formula is false and try to find a loop in it to create the counterexample, otherwise continue with the next pair of subformulas;
+
+- if no loop can be find for any subformula, then the initial formula is true.
 
 === Parsing
 
@@ -96,7 +96,7 @@ The provided code already does implements the required checks to ensure a formul
 
 === Reachability
 
-The set of reachable states is computed by repeatedly applying the #Post operator to the current frontier and removing all the states already seen from it in order to get the new frontier. The frontiers are also incrementally combined in order to form the set of reachable states. The list of frontiers is also kept since it will be useful when computing the counterexample trace.
+The set of reachable states is computed by repeatedly applying the #Post operator to the current frontier starting from the initial set of states and removing all the states already seen from it in order to get the new frontier. The frontiers are then incrementally combined in order to form the set of reachable states. The list of frontiers is also kept in order to be used when computing the counterexample trace.
 
 #algorithm({
   import algorithmic: *
