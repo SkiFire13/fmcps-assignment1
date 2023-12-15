@@ -4,12 +4,14 @@
 #let G = math.class("unary", sym.square.stroked)
 #let F = math.class("unary", sym.lozenge.stroked)
 
-#let Init = $I n i t$
-#let Reach = $R e a c h$
-#let New = $N e w$
-#let Frontiers = $F r o n t i e r s$
-#let Recur = $R e c u r$
-#let PreReach = $P r e R e a c h$
+#let var(s) = math.equation(s.clusters().map(s => [#s]).join([ ]))
+
+#let Init = var("Init")
+#let Reach = var("Reach")
+#let New = var("New")
+#let Frontiers = var("Frontiers")
+#let Recur = var("Recur")
+#let PreReach = var("PreReach")
 
 #let Pre = text(font: "", smallcaps("Pre"))
 #let Post = text(font: "", smallcaps("Post"))
