@@ -156,18 +156,31 @@ def find_looping_execution(model: BddFsm, recur: BDD, prereach: BDD) -> list[Sta
     It is assumed that `prereach` contains all the states required for such execution.
     It is guaranteed that the returned execution will contain only states in `prereach`.
     """
-    # TODO: Comments
+    # Start by picking one state
     s = model.pick_one_state(recur)
     r = BDD.false()
     while True:
+        # Compute the states reachable by s.
+        # Prereach must contain all the states needed for one state in recur
+        # to reach itself, so intersect with it to reduce the states being
+        # considered. This also ensures that g_i is not satisfied.
         new = model.post(s) & prereach
         frontiers = []
+        # As long as we can reach new states...
         while new.isnot_false():
             frontiers.append(new)
+            # If we found s we have a list of frontiers to it, so
+            # build a list of states in the cycle.
             if s.entailed(new):
                 return execution_from_frontiers(model, frontiers, s)
+            # Otherwise add new to the set of visited states
             r = r + new
+            # And compute the new set of new states, again intersecting
+            # with prereach, and removing those already visited.
             new = (model.post(new) & prereach) - r
+        # If we can't find new states and we haven't found s, then it
+        # it must mean s can reach some other state in recur that can loop,
+        # so try picking a new state from the intersection of r and recur.
         r = r & recur
         s = model.pick_one_state(r)
 
