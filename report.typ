@@ -10,12 +10,13 @@
 #let Reach = var("Reach")
 #let New = var("New")
 #let Frontier = var("Frontier")
-#let Frontiers = var("Frontiers")
+#let ReachFrontiers = var("ReachFrontiers")
 #let LoopFrontiers = var("LoopFrontiers")
 #let Recur = var("Recur")
 #let PreReach = var("PreReach")
 #let True = var("True")
 #let Trace = var("Trace")
+#let Tmp = var("Tmp")
 
 #let func(s) = text(font: "", smallcaps(s))
 
@@ -110,9 +111,9 @@ The set of reachable states is computed by repeatedly applying the #Post operato
   import algorithmic: *
   Assign[$Reach$][$Init$]
   Assign[$New$][$Init$]
-  Assign[$Frontiers$][[ ]]
+  Assign[$ReachFrontiers$][[ ]]
   While(cond: [*not* $IsEmpty(New)$], {
-    ([Append #New to #Frontiers],)
+    ([Append #New to #ReachFrontiers],)
     Assign[$New$][$Diff(Post(New), Reach)$]
     Assign[$Reach$][$Union(Reach, New)$]
   })
@@ -208,42 +209,33 @@ In this step the frontiers from the loop reachability check and the initial reac
 Which is a trace that satisfies $#G #F f_i and #F #G not g_i$ and hence the counterexample to produce.
 
 This is built backward:
-- it starts by adding $S$ to the trace;
-- it picks a random state that is in the second to last looping frontier and can reach $S$, assigns it to $S$ and add it to the trace;
-  - note: the last frontier is the one containing $S$, which is already in the trace.
-- it repeats this for all the previous looping frontiers;
-- it finds the frontier from the initial reachability computation that first reached $S$;
-- it picks a random state that is in the frontier and can reach $S$, assigns it to $S$ and add it to the trace;
-- it repeats this for all the previous looping frontiers;
-- it reverses the produced sequence of states to get the trace in the correct order.
-
-This is correct because:
-- by picking states in the frontiers the states picked are guaranteed reachable from the previous frontier;
-- by picking states until the very first one in the frontiers of the initial reachibility computation they are guaranteed to end with a state in the initial set of states;
-- by picking states that can reach the previous picked state the trace is guaranteed to be able to continue.
-
-Hence this produces a valid trace reaching $S$ and its loop.
+- $S$ is added to the trace;
+- the last frontier in $LoopFrontiers$ is the one containing $S$, so it is ignored. This also guarantees that the next frontier can reach $S$, which is the current last state in the trace;
+- a random state is continuously picked such that it both is in the last frontier and can reach the last state in the current trace, then it is added to the trace. This way it's guaranteed that states added to the trace can both reach the next state and be reached from the next frontier.
+- at this point the last state in the trace can be reached by $S$, due to how $LoopFrontiers$ was built (the first frontier was $Intersect(Post(S), PreReach)$);
+- the frontier in the reachability frontiers that first reached $S$ is now found and all the ones after it are discarded. It is guaranteed to exist because $S$ is reachable;
+- like before a random state is continuously picked and added to the trace;
+- in the end the last state added has been picked from the first reachability frontier and is thus an initial state, so the list of states produced is actually a trace;
+- finally the list gets reversed to produce a trace in the correct order.
 
 #algorithm({
   import algorithmic: *
   Assign[$Trace$][[$S$]]
   ([Remove the last frontier from $LoopFrontiers$],)
   For(cond: [$Frontier$ *in* $Reversed(LoopFrontiers)$], {
-    Assign[$S$][$PickOneState(Intersect(Pre(S), Frontier))$]
-    ([Append $S$ to $Trace$],)
+    Assign[$Tmp$][$PickOneState(Intersect(Pre(Last(Trace)), Frontier))$]
+    ([Append $Tmp$ to $Trace$],)
   })
   ([*end for*],)
 
-  While(cond: [*not* $IsSubset(S, Last(Frontiers))$], {
-    ([Pop the last frontier from $Frontiers$],)
+  While(cond: [*not* $IsSubset(S, Last(ReachFrontiers))$], {
+    ([Pop the last frontier from $ReachFrontiers$],)
   })
   ([*end while*],)
-  For(cond: [$Frontier$ *in* $Reversed(Frontiers)$], {
-    Assign[$S$][$PickOneState(Intersect(Pre(S), Frontier))$]
-    ([Append $S$ to $Trace$],)
+  For(cond: [$Frontier$ *in* $Reversed(ReachFrontiers)$], {
+    Assign[$Tmp$][$PickOneState(Intersect(Pre(Last(Trace)), Frontier))$]
+    ([Append $Tmp$ to $Trace$],)
   })
   ([*end for*],)
   ([Reverse $Trace$],)
 })
-
-Finally, the textual representation of the counterexample can be built by converting each state to its textual representation and alternating between them the textual representation of a input for that transition.
