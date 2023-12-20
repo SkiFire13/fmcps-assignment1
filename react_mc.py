@@ -3,7 +3,7 @@ import sys
 
 from collections import deque
 
-from typing import Literal, Optional, Tuple, TypeVar, Union
+from typing import Literal, Optional, Tuple, Union
 
 from pynusmv.dd import BDD, State
 from pynusmv.fsm import BddFsm
