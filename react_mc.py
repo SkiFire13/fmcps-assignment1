@@ -149,84 +149,75 @@ def parse_react(spec: Spec) -> Optional[list[tuple[Spec, Spec]]]:
     # if we are here, all conjuncts are of the correct form
     return implications
 
-def find_looping_execution(model: BddFsm, recur: BDD, prereach: BDD) -> list[State]:
+def find_looping_state(model: BddFsm, recur: BDD, prereach: BDD) -> Tuple[State, list[BDD]]:
     """
-    Returns a looping execution, that is a sequence of states where the first state
+    Returns a looping state, that is a sequence of states where the first state
     can appear again after the first one, containing at least one state from `recur`.
     It is assumed that `prereach` contains all the states required for such execution.
     It is guaranteed that the returned execution will contain only states in `prereach`.
+    Also returns a list of frontiers that make up the loop.
     """
     # Start by picking one state
     s = model.pick_one_state(recur)
     r = BDD.false()
     while True:
-        # Compute the states reachable by s.
-        # Prereach must contain all the states needed for one state in recur
-        # to reach itself, so intersect with it to reduce the states being
-        # considered. This also ensures that g_i is not satisfied.
+        # Compute the states in prereach reachable by s in at least one step.
         new = model.post(s) & prereach
-        frontiers = []
+        loop_frontiers = []
         # As long as we can reach new states...
         while new.isnot_false():
-            frontiers.append(new)
-            # If we found s we have a list of frontiers to it, so
-            # build a list of states in the cycle.
+            loop_frontiers.append(new)
+            # We found s, so it is a looping state.
             if s.entailed(new):
-                return execution_from_frontiers(model, frontiers, s)
+                return s, loop_frontiers
             # Otherwise add new to the set of visited states
+            # and compute the new set of reachable states, considering
+            # only those in prereach and not already visited.
             r = r + new
-            # And compute the new set of new states, again intersecting
-            # with prereach, and removing those already visited.
             new = (model.post(new) & prereach) - r
-        # If we can't find new states and we haven't found s, then it
-        # it must mean s can reach some other state in recur that can loop,
-        # so try picking a new state from the intersection of r and recur.
+        # We haven't found s, so try again considering the states in recur
+        # that s reached.
         r = r & recur
         s = model.pick_one_state(r)
 
-def execution_from_frontiers(model: BddFsm, frontiers: list[BDD], goal: State) -> list[State]:
+def build_counterexample_trace(model: BddFsm, recur: BDD, prereach: BDD, frontiers: list[BDD]) -> list[State]:
     """
-    Builds an execution until the state `goal` given a set of frontiers used
-    while trying to reach it from some set of states.
-
-    Note that it is expected for `goal` to be somewhere in the list of frontiers.
+    Build a counterexample trace given the model, the set of recurring states, the set of states that can
+    reach the recurring states and the frontiers visited while finding all the reachable states.
     """
+    # Find the looping state and the set of frontiers in the loop
+    s, loop_frontiers = find_looping_state(model, recur, prereach)
 
-    # Find the point in frontiers where `goal` was visited.
-    while not goal.entailed(frontiers[-1]):
+    # Build the trace backwards, so the last state is the looping one.
+    trace = [s]
+
+    # The last frontier is the one including the looping state, ignore it.
+    loop_frontiers.pop()
+    # Visit the loop_frontiers backwards, each time finding a state in the
+    # frontier that leads to the last state in the trace.
+    for frontier in reversed(loop_frontiers):
+        trace.append(model.pick_one_state(model.pre(trace[-1]) & frontier))
+
+    # Ignore all the reach frontiers after the one that reached s.
+    while not s.entailed(frontiers[-1]):
         frontiers.pop()
-    # Ignore the frontier containing `goal` since we directly select `goal`.
-    frontiers.pop()
-
-    # We build `execution` by working out way back from `goal`.
-    last = goal
-    execution = [goal]
+    # Same as before, but with the reach frontiers.
     for frontier in reversed(frontiers):
-        # We compute the set of states that can reach `last`
-        # and are in the frontier being considered.
-        candidates = model.pre(last) & frontier
-        # There is surely at least one candidate because `frontier`
-        # was built in such a way that each set of states can reach the next one,
-        # and `last` is part of that next one.
-        # There could however be more than one candidate, so pick one.
-        state = model.pick_one_state(candidates)
-        execution.append(state)
-        last = state
-    # We built `execution` in reverse, from the last until the first,
-    # so we need to reverse it to get the correct execution order.
-    execution.reverse()
-    return execution
+        trace.append(model.pick_one_state(model.pre(trace[-1]) & frontier))
 
-def execution_to_explanation(model: BddFsm, execution: list[State]) -> list[dict[str, str]]:
+    # Finally, reverse the trace since we built it backward.
+    return list(reversed(trace))
+
+def trace_to_explanation(model: BddFsm, trace: list[State]) -> list[dict[str, str]]:
     """
-    Create a textual explanation of a given execution, that is a list of
+    Create a textual explanation of a given trace, that is a list of
     alternating (textual) states and inputs that match the given symbolic states.
     """
     # Start with the initial state.
-    # At every step will add the inputs to get to the next state and that state itself.
-    explanation = [execution[0].get_str_values()]
-    # Loop over sliding windows of size 2, that is for each state and the next one.
-    for s1, s2 in zip(execution, execution[1:]):
+    # At every step will add the inputs to get to the next state and the state itself.
+    explanation = [trace[0].get_str_values()]
+    # Loop over trace with a sliding windows of size 2, that is for each consecutive pair of states:
+    for s1, s2 in zip(trace, trace[1:]):
         # Compute the possible inputs to go from one state to the other
         # and pick one of them.
         inputs = model.get_inputs_between_states(s1, s2)
@@ -238,7 +229,7 @@ def execution_to_explanation(model: BddFsm, execution: list[State]) -> list[dict
 
 Res = Union[Tuple[Literal[True], None], Tuple[Literal[False], list[dict[str, str]]]]
 
-def check_explain_react_single(model: BddFsm, reach: BDD, reach_frontiers: list[BDD], lhs: Spec, rhs: Spec) -> Res:
+def check_explain_react_single(model: BddFsm, reach: BDD, frontiers: list[BDD], lhs: Spec, rhs: Spec) -> Res:
     """
     Returns whether `model` satisfies or not the reactivity formula `GF lhs -> GF rhs`,
     that is, whether all executions of the model satisfy it or not.
@@ -283,14 +274,10 @@ def check_explain_react_single(model: BddFsm, reach: BDD, reach_frontiers: list[
             # If `recur` is contained in `prereach` then `recur` is not gonna change,
             # hence it must contain a loop.
             if recur.entailed(prereach):
-                # Find the looping part of the execution. It is guaranteed to contain only
-                # states from `prereach`, which in turn contains only states that don't satisfy `rhs`,
-                # which is required to falsify `GF rhs`` in the final execution.
-                looping_execution = find_looping_execution(model, recur, prereach)
-                # Find an execution leading to the repeating state.
-                reach_execution = execution_from_frontiers(model, reach_frontiers, looping_execution[-1])
-                # Finally, convert the execution to the required textual representation and return it.
-                return False, execution_to_explanation(model, reach_execution + looping_execution)
+                # Build the trace
+                trace = build_counterexample_trace(model, recur, prereach, frontiers)
+                # And convert it to a textual explanation
+                return False, trace_to_explanation(model, trace)
 
             # Only consider states that don't satisfy `rhs`.
             new = model.pre(new) - bddrhs - prereach

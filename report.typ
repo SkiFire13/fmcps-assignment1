@@ -16,7 +16,6 @@
 #let PreReach = var("PreReach")
 #let True = var("True")
 #let Trace = var("Trace")
-#let Last = var("Last")
 
 #let func(s) = text(font: "", smallcaps(s))
 
@@ -29,6 +28,7 @@
 #let IsEmpty = func("IsEmpty")
 #let PickOneState = func("PickOneState")
 #let Reversed = func("Reversed")
+#let Last = func("Last")
 
 #let emptyset = text("\u{2205}", font: ())
 
@@ -245,3 +245,5 @@ Hence this produces a valid trace reaching $S$ and its loop.
   ([*end for*],)
   ([Reverse $Trace$],)
 })
+
+Finally, the textual representation of the counterexample can be built by converting each state to its textual representation and alternating between them the textual representation of a input for that transition.
