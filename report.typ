@@ -70,7 +70,7 @@ $
 
 Since the outer operand is a disjunction it sufficies to find a trace that satisfies one of the inner $#G #F f_i and #F #G not g_i$ formulas, and that will be a valid counterexample. The problem thus reduces to showing a trace where $f_i$ is satisfied repeatedly and $not g_i$ is satisfied persistently.
 
-This is true if and only if there's a set $S$ of reachable states that satisfy $f_i$ and $not g_i$ and each state in $S$ can reach another state $S$ by only going through states that satisfy $not g_i$.
+This is true if and only if there's a set $S$ of reachable states that satisfy $f_i$ and $not g_i$ and each state in $S$ can reach another state in $S$ by only going through states that satisfy $not g_i$.
 
 To see why this is sufficient, consider a trace that first reaches one of the states in $S$, which is possible because it is only made up of reachable states, and then repeatedly reaches another element of $S$ by only going through states that satify $not g_i$, which is possible by definition. This trace repeatedly visits states in $S$, which all satisfy $f_i$ and hence the trace satisfies $#G #F f_i$. It also persistently visits states that satisfy $not g_i$, because both the states in $S$ and the states visited when reaching other states in $S$ all satisfy $not g_i$, and hence the trace satisfies $#F #G g_i$. Hence the criteria proposed is sufficient. 
 
