@@ -151,11 +151,11 @@ def parse_react(spec: Spec) -> Optional[list[tuple[Spec, Spec]]]:
 
 def find_looping_state(model: BddFsm, recur: BDD, prereach: BDD) -> Tuple[State, list[BDD]]:
     """
-    Returns a looping state, that is a sequence of states where the first state
-    can appear again after the first one, containing at least one state from `recur`.
-    It is assumed that `prereach` contains all the states required for such execution.
-    It is guaranteed that the returned execution will contain only states in `prereach`.
-    Also returns a list of frontiers that make up the loop.
+    Returns state and set of frontiers such that:
+    - the state is in recur;
+    - all the states in the frontiers are in prereach;
+    - the frontiers start from the returned state (excluded);
+    - the frontiers end in a set of states including the returned one.
     """
     # Start by picking one state
     s = model.pick_one_state(recur)
@@ -179,8 +179,8 @@ def find_looping_state(model: BddFsm, recur: BDD, prereach: BDD) -> Tuple[State,
 
 def build_counterexample_trace(model: BddFsm, recur: BDD, prereach: BDD, frontiers: list[BDD]) -> list[State]:
     """
-    Build a counterexample trace given the model, the set of recurring states, the set of states that can
-    reach the recurring states and the frontiers visited while finding all the reachable states.
+    Build a counterexample trace, that is an execution that reaches a state in recur and then reaches
+    the same state again by only visiting states in prereach.
     """
     # Find the looping state and the set of frontiers in the loop
     s, loop_frontiers = find_looping_state(model, recur, prereach)
