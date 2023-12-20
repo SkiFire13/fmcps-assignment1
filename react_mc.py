@@ -170,13 +170,10 @@ def find_looping_state(model: BddFsm, recur: BDD, prereach: BDD) -> Tuple[State,
             # We found s, so it is a looping state.
             if s.entailed(new):
                 return s, loop_frontiers
-            # Otherwise add new to the set of visited states
-            # and compute the new set of reachable states, considering
-            # only those in prereach and not already visited.
+            # Otherwise compute the new iteration.
             r = r + new
             new = (model.post(new) & prereach) - r
-        # We haven't found s, so try again considering the states in recur
-        # that s reached.
+        # s can't reach itself, so try again with the states in recur that s reached.
         r = r & recur
         s = model.pick_one_state(r)
 
@@ -205,7 +202,7 @@ def build_counterexample_trace(model: BddFsm, recur: BDD, prereach: BDD, frontie
     for frontier in reversed(frontiers):
         trace.append(model.pick_one_state(model.pre(trace[-1]) & frontier))
 
-    # Finally, reverse the trace since we built it backward.
+    # Reverse the trace since we built it backward.
     return list(reversed(trace))
 
 def trace_to_explanation(model: BddFsm, trace: list[State]) -> list[dict[str, str]]:
@@ -214,15 +211,13 @@ def trace_to_explanation(model: BddFsm, trace: list[State]) -> list[dict[str, st
     alternating (textual) states and inputs that match the given symbolic states.
     """
     # Start with the initial state.
-    # At every step will add the inputs to get to the next state and the state itself.
     explanation = [trace[0].get_str_values()]
-    # Loop over trace with a sliding windows of size 2, that is for each consecutive pair of states:
+    # For each consecutive pair of states:
     for s1, s2 in zip(trace, trace[1:]):
-        # Compute the possible inputs to go from one state to the other
-        # and pick one of them.
+        # Pick one input between the states.
         inputs = model.get_inputs_between_states(s1, s2)
         input = model.pick_one_inputs(inputs)
-        # Then add their textual representation to the list.
+        # Add their textual representation to the list.
         explanation.append(input.get_str_values())
         explanation.append(s2.get_str_values())
     return explanation
@@ -253,35 +248,29 @@ def check_explain_react_single(model: BddFsm, reach: BDD, frontiers: list[BDD], 
     bddlhs = spec_to_bdd(model, lhs)
     bddrhs = spec_to_bdd(model, rhs)
 
-    # We want to recur such that:
-    # - states satisfying lhs are visited repeatedly, hence making `GF lhs` true
-    # - states satisfying rhs are never visited, hence making `GF rhs` false
-    # Hence we'll loop for a loop containing a reachable state satisfying `lhs`,
-    # but without any states satisfying `rhs` in the whole loop.
-
-    # The set of states we want to visit repeatedly, which is composed by the reachable
-    # states satisfying `lhs` but not `rhs`
+    # Candidate for the set of states we're looking for.
     recur = (reach & bddlhs) - bddrhs
 
+    # While there are possible candidates...
     while recur.isnot_false():
-        # Only consider states that don't satisfy `rhs`.
+        # Consider the states that can reach recur but don't satisfy g
         new = model.pre(recur) - bddrhs
         prereach = BDD.false()
 
+        # While there are new states to visit...
         while new.isnot_false():
             prereach = prereach + new
 
-            # If `recur` is contained in `prereach` then `recur` is not gonna change,
-            # hence it must contain a loop.
+            # We reached recur, so there must be a loop between its states.
             if recur.entailed(prereach):
-                # Build the trace
+                # Build the counterexample trace and convert it to a textual explanation.
                 trace = build_counterexample_trace(model, recur, prereach, frontiers)
-                # And convert it to a textual explanation
                 return False, trace_to_explanation(model, trace)
 
-            # Only consider states that don't satisfy `rhs`.
-            new = model.pre(new) - bddrhs - prereach
+            # Compute the next frontier.
+            new = (model.pre(new) - bddrhs) - prereach
 
+        # Update the candidate set.
         recur = recur & prereach
 
     return True, None
@@ -312,8 +301,7 @@ def check_explain_react_spec(spec: Spec) -> Optional[Res]:
     # Retrieve the model from the global database.
     model = pynusmv.glob.prop_database().master.bddFsm
 
-    # First, compute the set of reachable states as a BDD. This is useful for both ignoring
-    # unreachable states and for building the final execution until the repeating state.
+    # Compute the set of reachable states.
     reach = model.init
     new = model.init
     reach_frontiers = []
@@ -322,8 +310,7 @@ def check_explain_react_spec(spec: Spec) -> Optional[Res]:
         new = model.post(new) - reach
         reach = reach + new
 
-    # Handle the terms of the conjunctions separately.
-    # If any of them is not satisfied then the whole conjunction is unsatisfied.
+    # For each subformula check if it holds. If it doesn't return False.
     for lhs, rhs in parsed:
         res = check_explain_react_single(model, reach, reach_frontiers, lhs, rhs)
         if not res[0]:
