@@ -177,7 +177,7 @@ def find_looping_state(model: BddFsm, recur: BDD, prereach: BDD) -> Tuple[State,
         r = r & recur
         s = model.pick_one_state(r)
 
-def build_counterexample_trace(model: BddFsm, recur: BDD, prereach: BDD, frontiers: list[BDD]) -> list[State]:
+def build_counterexample_trace(model: BddFsm, recur: BDD, prereach: BDD, reach_frontiers: list[BDD]) -> list[State]:
     """
     Build a counterexample trace, that is an execution that reaches a state in recur and then reaches
     the same state again by only visiting states in prereach.
@@ -196,10 +196,10 @@ def build_counterexample_trace(model: BddFsm, recur: BDD, prereach: BDD, frontie
         trace.append(model.pick_one_state(model.pre(trace[-1]) & frontier))
 
     # Ignore all the reach frontiers after the one that reached s.
-    while not s.entailed(frontiers[-1]):
-        frontiers.pop()
+    while not s.entailed(reach_frontiers[-1]):
+        reach_frontiers.pop()
     # Same as before, but with the reach frontiers.
-    for frontier in reversed(frontiers):
+    for frontier in reversed(reach_frontiers):
         trace.append(model.pick_one_state(model.pre(trace[-1]) & frontier))
 
     # Reverse the trace since we built it backward.
@@ -224,7 +224,7 @@ def trace_to_explanation(model: BddFsm, trace: list[State]) -> list[dict[str, st
 
 Res = Union[Tuple[Literal[True], None], Tuple[Literal[False], list[dict[str, str]]]]
 
-def check_explain_react_single(model: BddFsm, reach: BDD, frontiers: list[BDD], lhs: Spec, rhs: Spec) -> Res:
+def check_explain_react_single(model: BddFsm, reach: BDD, reach_frontiers: list[BDD], lhs: Spec, rhs: Spec) -> Res:
     """
     Returns whether `model` satisfies or not the reactivity formula `GF lhs -> GF rhs`,
     that is, whether all executions of the model satisfy it or not.
@@ -264,7 +264,7 @@ def check_explain_react_single(model: BddFsm, reach: BDD, frontiers: list[BDD], 
             # We reached recur, so there must be a loop between its states.
             if recur.entailed(prereach):
                 # Build the counterexample trace and convert it to a textual explanation.
-                trace = build_counterexample_trace(model, recur, prereach, frontiers)
+                trace = build_counterexample_trace(model, recur, prereach, reach_frontiers)
                 return False, trace_to_explanation(model, trace)
 
             # Compute the next frontier.
