@@ -18,15 +18,17 @@
 #let Trace = var("Trace")
 #let Last = var("Last")
 
-#let Pre = text(font: "", smallcaps("Pre"))
-#let Post = text(font: "", smallcaps("Post"))
-#let Diff = text(font: "", smallcaps("Diff"))
-#let Union = text(font: "", smallcaps("Union"))
-#let Intersect = text(font: "", smallcaps("Intersect"))
-#let IsSubset = text(font: "", smallcaps("IsSubset"))
-#let IsEmpty = text(font: "", smallcaps("IsEmpty"))
-#let PickOneState = text(font: "", smallcaps("PickOneState"))
-#let Reversed = text(font: "", smallcaps("Reversed"))
+#let func(s) = text(font: "", smallcaps(s))
+
+#let Pre = func("Pre")
+#let Post = func("Post")
+#let Diff = func("Diff")
+#let Union = func("Union")
+#let Intersect = func("Intersect")
+#let IsSubset = func("IsSubset")
+#let IsEmpty = func("IsEmpty")
+#let PickOneState = func("PickOneState")
+#let Reversed = func("Reversed")
 
 #let emptyset = text("\u{2205}", font: ())
 
